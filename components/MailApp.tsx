@@ -28,6 +28,7 @@ export default function MailApp() {
   const [loadingMessage, setLoadingMessage] = useState(false);
   const [minutesLeft, setMinutesLeft] = useState(TTL_MINUTES);
   const [autoChecking, setAutoChecking] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [toasts, setToasts] = useState<ToastData[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const toastIdRef = useRef(0);
@@ -81,6 +82,7 @@ export default function MailApp() {
         const data = await res.json();
         if (res.ok && data.success) {
           setMessages(data.data?.messages || []);
+          if (!silent) pushToast("success", "Inbox diperbarui.");
         } else if (!silent) {
           pushToast("error", data.error || "Gagal memuat inbox.");
         }
@@ -164,6 +166,13 @@ export default function MailApp() {
     }
   }
 
+  async function handleRefresh() {
+    if (!session || refreshing) return;
+    setRefreshing(true);
+    await fetchInbox(session, false);
+    setRefreshing(false);
+  }
+
   function handleClearAll() {
     if (!session) return;
     if (!confirm("Buat inbox baru? Alamat email saat ini akan diganti.")) return;
@@ -198,6 +207,8 @@ export default function MailApp() {
           messages={messages}
           onOpen={handleOpenMessage}
           onClearAll={handleClearAll}
+          onRefresh={handleRefresh}
+          refreshing={refreshing}
           autoChecking={autoChecking}
         />
         <FeatureGrid />

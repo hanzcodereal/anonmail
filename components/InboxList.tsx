@@ -6,11 +6,15 @@ export default function InboxList({
   messages,
   onOpen,
   onClearAll,
+  onRefresh,
+  refreshing,
   autoChecking,
 }: {
   messages: TempMailMessage[];
   onOpen: (number: number) => void;
   onClearAll: () => void;
+  onRefresh: () => void;
+  refreshing: boolean;
   autoChecking: boolean;
 }) {
   return (
@@ -32,14 +36,24 @@ export default function InboxList({
             {autoChecking ? "live" : "idle"}
           </span>
         </div>
-        {messages.length > 0 && (
+        <div className="flex items-center gap-2">
           <button
-            onClick={onClearAll}
-            className="flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-[12px] font-medium text-mute active:bg-surface-3 transition-colors"
+            onClick={onRefresh}
+            disabled={refreshing}
+            aria-label="Refresh inbox"
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-2 text-mute active:bg-surface-3 transition-colors disabled:opacity-60"
           >
-            <TrashIcon /> Hapus
+            <RefreshIcon spinning={refreshing} />
           </button>
-        )}
+          {messages.length > 0 && (
+            <button
+              onClick={onClearAll}
+              className="flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-[12px] font-medium text-mute active:bg-surface-3 transition-colors"
+            >
+              <TrashIcon /> Hapus
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-col gap-3">
@@ -88,6 +102,25 @@ export default function InboxList({
   );
 }
 
+function RefreshIcon({ spinning }: { spinning?: boolean }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      className={spinning ? "animate-spin" : ""}
+    >
+      <path
+        d="M3.5 12a8.5 8.5 0 0114.5-6M20.5 12a8.5 8.5 0 01-14.5 6"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <path d="M18 3v4h-4M6 21v-4h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 function TrashIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
