@@ -1,8 +1,9 @@
 # AnonMail
 
 Email sementara instan — dibangun dengan Next.js (App Router), Tailwind CSS
-dengan gaya **rounded soft-dark** monokrom, dan backend scraping
-[tempm.com](https://tempm.com) (tanpa API key).
+dengan gaya **rounded soft-dark** monokrom, dan backend
+[tempmail.plus](https://tempmail.plus) lewat **API JSON resminya**
+(`/api/mails`) — bukan scraping HTML, jadi jauh lebih stabil.
 
 Dikembangkan oleh **hanzcode**. Kalau proyek ini membantu, dukungannya
 sangat berarti: <https://saweria.co/hanzreally>
@@ -35,29 +36,28 @@ Buka [http://localhost:3000](http://localhost:3000).
 
 ## Cara kerja backend
 
-AnonMail tidak memakai API resmi — melainkan men-scrape
-[tempm.com](https://tempm.com) langsung dari server (Next.js
-Route Handlers di `app/api/*`), meniru request yang dibuat browser saat
-memakai situs itu. Karena setiap alamat di tempm.com bisa dibuka
-ulang cukup dengan domain+username-nya (tanpa proses "login" nyata), semua
-route di sini bersifat **stateless** — cocok untuk Vercel Serverless
-Functions yang instance-nya bisa berbeda tiap request.
+AnonMail memakai `/api/mails` milik [tempmail.plus](https://tempmail.plus),
+API JSON tidak resmi tapi terstruktur (bukan HTML yang perlu di-scrape).
+Membuat alamat email sepenuhnya **lokal** — tidak ada request ke server
+sama sekali, karena tempmail.plus tidak butuh registrasi: alamat langsung
+aktif begitu dipakai untuk cek inbox. Semua route di sini bersifat
+**stateless**, cocok untuk Vercel Serverless Functions yang instance-nya
+bisa berbeda tiap request.
 
 | Route Next.js | Method | Fungsi |
 | --- | --- | --- |
 | `/api/domain` | GET | Daftar domain yang tersedia |
-| `/api/[email]` | GET | Buat/validasi sebuah alamat (`/api/random` untuk acak, atau `/api/nama@domain.tld`) |
+| `/api/[email]` | GET | Buat sebuah alamat, murni lokal (`/api/random` untuk acak, atau `/api/nama@domain.tld`) |
 | `/api/[email]/inbox` | GET | Ambil daftar pesan masuk untuk alamat tsb, masing-masing diberi nomor urut |
-| `/api/[email]/inbox/[number]` | GET | Ambil isi lengkap satu pesan berdasarkan nomor urutnya |
+| `/api/[email]/inbox/[number]` | GET | Ambil isi lengkap satu pesan (html/text) berdasarkan nomor urutnya |
 
-Logika scraping (request, parsing HTML, cookie) ada di `lib/tempmail.ts`,
-diport dari scraper referensi (`tempm.js`, axios + cheerio) ke
-`fetch` API bawaan Next.js.
+Logika request ada di `lib/tempmail.ts`, diport dari scraper referensi
+(`tempmail_plus.js`, axios) ke `fetch` API bawaan Next.js.
 
-## Kenapa kadang muncul error dari tempm.com?
+## Kenapa kadang muncul error dari tempmail.plus?
 
-tempm.com adalah layanan gratis pihak ketiga yang kadang mengalami
-gangguan di luar kendali kita (server lambat, struktur HTML berubah, dsb).
+tempmail.plus adalah layanan gratis pihak ketiga yang kadang mengalami
+gangguan di luar kendali kita (server lambat, limit request, dsb).
 Kalau itu terjadi, muncul notifikasi toast yang jelas — bukan crash diam-diam.
 
 ## Environment variables
@@ -111,7 +111,7 @@ components/
   AnonMailArt.tsx        → ilustrasi mailbox SVG (rounded style)
   Toast.tsx              → notifikasi sukses/error, pengganti alert()
 lib/
-  tempmail.ts           → scraper tempm.com (fetch-based, stateless)
+  tempmail.ts           → klien API tempmail.plus (fetch-based, stateless)
   types.ts               → shared TypeScript types
 public/
   og-image.png          → placeholder banner OG 1200x630
@@ -121,13 +121,14 @@ public/
 
 ## Catatan
 
-- Domain email diambil dari daftar domain aktif tempm.com di
+- Domain email diambil dari daftar domain aktif tempmail.plus di
   `lib/tempmail.ts`, jadi kalau situs sumbernya mengganti daftar domain,
   perbarui juga array `DOMAINS` di file tersebut.
-- tempm.com tidak punya endpoint hapus akun — "Ganti Alamat" di
-  Pengaturan hanya membuang sesi lokal dan membuat alamat baru.
-- Kalau scraping gagal, pesan error yang jelas akan muncul lewat toast,
-  bukan `alert()` browser.
+- tempmail.plus punya endpoint hapus inbox (`destroyInbox` di
+  `lib/tempmail.ts`), tapi belum disambungkan ke tombol "Hapus" —
+  saat ini tombol itu hanya membuang sesi lokal dan membuat alamat baru.
+- Kalau tempmail.plus sedang bermasalah, pesan error yang jelas akan
+  muncul lewat toast, bukan `alert()` browser.
 - Ganti `public/og-image.png` atau set `NEXT_PUBLIC_OG_IMAGE_URL` begitu
   kamu punya banner final.
 
