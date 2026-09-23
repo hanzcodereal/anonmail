@@ -1,10 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  createEmail,
-  getRandomDomain,
-  isValidUsername,
-  TempMailError,
-} from "@/lib/tempmail";
+import { createEmail, isValidUsername, TempMailError } from "@/lib/tempmail";
 
 // GET /api/[email]
 //   - /api/random                → email acak di domain acak
@@ -29,7 +24,7 @@ export async function GET(
           { status: 400 }
         );
       }
-      result = await createEmail(username, getRandomDomain());
+      result = await createEmail(username);
     } else {
       const [username, domain] = raw.split("@");
       result = await createEmail(username, domain);
@@ -42,4 +37,4 @@ export async function GET(
       err instanceof TempMailError ? err.message : "Gagal membuat email.";
     return NextResponse.json({ success: false, error: message }, { status });
   }
-           }
+}
