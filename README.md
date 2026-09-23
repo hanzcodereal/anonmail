@@ -2,7 +2,7 @@
 
 Email sementara instan — dibangun dengan Next.js (App Router), Tailwind CSS
 dengan gaya **rounded soft-dark** monokrom, dan backend scraping
-[generator.email](https://generator.email) (tanpa API key).
+[tempm.com](https://tempm.com) (tanpa API key).
 
 Dikembangkan oleh **hanzcode**. Kalau proyek ini membantu, dukungannya
 sangat berarti: <https://saweria.co/hanzreally>
@@ -36,9 +36,9 @@ Buka [http://localhost:3000](http://localhost:3000).
 ## Cara kerja backend
 
 AnonMail tidak memakai API resmi — melainkan men-scrape
-[generator.email](https://generator.email) langsung dari server (Next.js
+[tempm.com](https://tempm.com) langsung dari server (Next.js
 Route Handlers di `app/api/*`), meniru request yang dibuat browser saat
-memakai situs itu. Karena setiap alamat di generator.email bisa dibuka
+memakai situs itu. Karena setiap alamat di tempm.com bisa dibuka
 ulang cukup dengan domain+username-nya (tanpa proses "login" nyata), semua
 route di sini bersifat **stateless** — cocok untuk Vercel Serverless
 Functions yang instance-nya bisa berbeda tiap request.
@@ -51,12 +51,12 @@ Functions yang instance-nya bisa berbeda tiap request.
 | `/api/[email]/inbox/[number]` | GET | Ambil isi lengkap satu pesan berdasarkan nomor urutnya |
 
 Logika scraping (request, parsing HTML, cookie) ada di `lib/tempmail.ts`,
-diport dari scraper referensi (`tempmail.js`) dari Node `https` module ke
+diport dari scraper referensi (`tempm.js`, axios + cheerio) ke
 `fetch` API bawaan Next.js.
 
-## Kenapa kadang muncul error dari generator.email?
+## Kenapa kadang muncul error dari tempm.com?
 
-generator.email adalah layanan gratis pihak ketiga yang kadang mengalami
+tempm.com adalah layanan gratis pihak ketiga yang kadang mengalami
 gangguan di luar kendali kita (server lambat, struktur HTML berubah, dsb).
 Kalau itu terjadi, muncul notifikasi toast yang jelas — bukan crash diam-diam.
 
@@ -111,7 +111,7 @@ components/
   AnonMailArt.tsx        → ilustrasi mailbox SVG (rounded style)
   Toast.tsx              → notifikasi sukses/error, pengganti alert()
 lib/
-  tempmail.ts           → scraper generator.email (fetch-based, stateless)
+  tempmail.ts           → scraper tempm.com (fetch-based, stateless)
   types.ts               → shared TypeScript types
 public/
   og-image.png          → placeholder banner OG 1200x630
@@ -121,10 +121,10 @@ public/
 
 ## Catatan
 
-- Domain email diambil dari daftar domain aktif generator.email di
+- Domain email diambil dari daftar domain aktif tempm.com di
   `lib/tempmail.ts`, jadi kalau situs sumbernya mengganti daftar domain,
   perbarui juga array `DOMAINS` di file tersebut.
-- generator.email tidak punya endpoint hapus akun — "Ganti Alamat" di
+- tempm.com tidak punya endpoint hapus akun — "Ganti Alamat" di
   Pengaturan hanya membuang sesi lokal dan membuat alamat baru.
 - Kalau scraping gagal, pesan error yang jelas akan muncul lewat toast,
   bukan `alert()` browser.
