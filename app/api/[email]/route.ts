@@ -19,7 +19,7 @@ export async function GET(
           {
             success: false,
             error:
-              "Nama harus 3-30 karakter, huruf/angka/titik/underscore/strip, diawali & diakhiri huruf atau angka.",
+              "Nama hanya boleh huruf/angka, dipisah satu tanda titik/strip/underscore di antaranya.",
           },
           { status: 400 }
         );
