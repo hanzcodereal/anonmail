@@ -88,8 +88,8 @@ export default function SettingsSection({
             rel="noreferrer"
             className="mt-4 flex items-center justify-center gap-1.5 rounded-full bg-paper px-3.5 py-2.5 text-[12.5px] font-semibold text-ink active:scale-[0.98] transition-transform"
           >
-            <HeartIcon />
-            Dukung di Saweria
+            <CoffeeIcon />
+            Dukung
           </a>
         </div>
       </div>
@@ -171,6 +171,31 @@ function HeartIcon() {
         stroke="currentColor"
         strokeWidth="1.7"
         strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+function CoffeeIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M4 9h13v5a5 5 0 01-5 5H9a5 5 0 01-5-5V9z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M17 10.5h1.2a2.3 2.3 0 010 4.6H17"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <path
+        d="M8 2.5c-.6.9.5 1.3 0 2.2M12 2.5c-.6.9.5 1.3 0 2.2"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
       />
     </svg>
   );

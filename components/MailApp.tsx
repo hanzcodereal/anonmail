@@ -16,6 +16,7 @@ import { ToastStack, type ToastData } from "./Toast";
 
 const STORAGE_KEY = "anonmail_session_v3";
 const TTL_MINUTES = 24 * 60;
+const TTL_SECONDS = TTL_MINUTES * 60;
 const POLL_INTERVAL_MS = 8000;
 
 export default function MailApp() {
@@ -26,7 +27,7 @@ export default function MailApp() {
   const [openMessageNumber, setOpenMessageNumber] = useState<number | null>(null);
   const [openMessage, setOpenMessage] = useState<TempMailMessage | null>(null);
   const [loadingMessage, setLoadingMessage] = useState(false);
-  const [minutesLeft, setMinutesLeft] = useState(TTL_MINUTES);
+  const [secondsLeft, setSecondsLeft] = useState(TTL_SECONDS);
   const [autoChecking, setAutoChecking] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [toasts, setToasts] = useState<ToastData[]>([]);
@@ -66,11 +67,11 @@ export default function MailApp() {
   useEffect(() => {
     if (!session) return;
     const tick = () => {
-      const elapsedMin = Math.floor((Date.now() - session.createdAt) / 60000);
-      setMinutesLeft(Math.max(0, TTL_MINUTES - elapsedMin));
+      const elapsedSec = Math.floor((Date.now() - session.createdAt) / 1000);
+      setSecondsLeft(Math.max(0, TTL_SECONDS - elapsedSec));
     };
     tick();
-    const id = setInterval(tick, 30000);
+    const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [session]);
 
@@ -108,11 +109,13 @@ export default function MailApp() {
     };
   }, [session, fetchInbox]);
 
-  async function generate(username?: string) {
+  async function generate(username?: string, domain?: string) {
     setLoadingSession(true);
     setMessages([]);
     try {
-      const path = username ? encodeURIComponent(username) : "random";
+      const path = username
+        ? encodeURIComponent(domain ? `${username}@${domain}` : username)
+        : "random";
       const res = await fetch(`/api/${path}`);
       const data = await res.json();
       if (!res.ok || !data.success) {
@@ -212,7 +215,7 @@ export default function MailApp() {
           autoChecking={autoChecking}
         />
         <FeatureGrid />
-        <StatsGrid received={messages.length} minutesLeft={minutesLeft} />
+        <StatsGrid received={messages.length} secondsLeft={secondsLeft} />
         <CTASection onGenerate={() => generate()} />
         <SettingsSection session={session} onDelete={handleNewAddress} />
       </main>

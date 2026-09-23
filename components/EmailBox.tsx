@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Session } from "@/lib/types";
 
 export default function EmailBox({
@@ -12,13 +12,31 @@ export default function EmailBox({
 }: {
   session: Session | null;
   loading: boolean;
-  onGenerate: (username?: string) => void;
+  onGenerate: (username?: string, domain?: string) => void;
   onCopy: () => void;
   copied: boolean;
 }) {
   const [customOpen, setCustomOpen] = useState(false);
   const [customName, setCustomName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [domains, setDomains] = useState<string[]>([]);
+  const [customDomain, setCustomDomain] = useState("");
+  const [domainsLoading, setDomainsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!customOpen || domains.length) return;
+    setDomainsLoading(true);
+    fetch("/api/domain")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.data?.domains)) {
+          setDomains(data.data.domains);
+          setCustomDomain((prev) => prev || data.data.domains[0] || "");
+        }
+      })
+      .catch(() => {})
+      .finally(() => setDomainsLoading(false));
+  }, [customOpen, domains.length]);
 
   async function handleCustomSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -28,7 +46,7 @@ export default function EmailBox({
       setError("Minimal 3 karakter.");
       return;
     }
-    onGenerate(trimmed);
+    onGenerate(trimmed, customDomain || undefined);
     setCustomOpen(false);
     setCustomName("");
   }
@@ -115,9 +133,26 @@ export default function EmailBox({
                 placeholder="nama_kamu"
                 className="min-w-0 flex-1 bg-transparent font-mono text-[14px] text-paper outline-none placeholder:text-mute-2"
               />
-              <span className="shrink-0 font-mono text-[12px] text-mute">
-                @{session?.domain ?? "anonmail.site"}
-              </span>
+              <span className="shrink-0 font-mono text-[12px] text-mute">@</span>
+              <select
+                value={customDomain}
+                onChange={(e) => setCustomDomain(e.target.value)}
+                disabled={domainsLoading || !domains.length}
+                aria-label="Pilih domain"
+                className="shrink-0 max-w-[42%] bg-transparent font-mono text-[12px] text-paper outline-none disabled:opacity-50"
+              >
+                {domains.length ? (
+                  domains.map((d) => (
+                    <option key={d} value={d} className="bg-surface text-paper">
+                      {d}
+                    </option>
+                  ))
+                ) : (
+                  <option className="bg-surface text-paper">
+                    {domainsLoading ? "Memuat…" : "anonmail.site"}
+                  </option>
+                )}
+              </select>
             </div>
             {error && <p className="mt-2.5 text-[13px] text-danger">{error}</p>}
             <div className="mt-5 flex gap-2.5">

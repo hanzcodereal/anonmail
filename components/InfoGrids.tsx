@@ -32,18 +32,19 @@ export function FeatureGrid() {
 
 export function StatsGrid({
   received,
-  minutesLeft,
+  secondsLeft,
 }: {
   received: number;
-  minutesLeft: number;
+  secondsLeft: number;
 }) {
-  const hours = Math.floor(minutesLeft / 60);
-  const mins = minutesLeft % 60;
+  const hours = Math.floor(secondsLeft / 3600);
+  const mins = Math.floor((secondsLeft % 3600) / 60);
+  const secs = secondsLeft % 60;
   const stats = [
     { icon: <MailIcon />, value: String(received), label: "Email Diterima" },
     {
       icon: <ClockIcon />,
-      value: `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`,
+      value: `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`,
       label: "Waktu Tersisa",
     },
   ];
