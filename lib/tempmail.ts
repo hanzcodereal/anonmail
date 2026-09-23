@@ -40,20 +40,58 @@ export type TempMailMessage = {
   body: string;
 };
 
+type CookieJar = { value: string | null };
+
+function mergeCookies(jar: CookieJar, setCookieList: string[]) {
+  if (!setCookieList.length) return;
+  const newCookies = setCookieList.map((c) => c.split(";")[0]);
+  const existing = jar.value ? jar.value.split("; ").filter(Boolean) : [];
+  for (const nc of newCookies) {
+    const key = nc.split("=")[0];
+    const idx = existing.findIndex((e) => e.startsWith(key + "="));
+    if (idx >= 0) existing[idx] = nc;
+    else existing.push(nc);
+  }
+  jar.value = existing.join("; ");
+}
+
+function setJarCookie(jar: CookieJar, name: string, value: string) {
+  const existing = jar.value ? jar.value.split("; ").filter(Boolean) : [];
+  const idx = existing.findIndex((e) => e.startsWith(name + "="));
+  if (idx >= 0) existing[idx] = `${name}=${value}`;
+  else existing.push(`${name}=${value}`);
+  jar.value = existing.join("; ");
+}
+
+function getSetCookieHeaders(res: Response): string[] {
+  const anyHeaders = res.headers as unknown as { getSetCookie?: () => string[] };
+  if (typeof anyHeaders.getSetCookie === "function") {
+    return anyHeaders.getSetCookie() || [];
+  }
+  const single = res.headers.get("set-cookie");
+  return single ? [single] : [];
+}
+
 async function safeFetch(
   url: string,
-  init: RequestInit = {}
+  init: RequestInit = {},
+  jar?: CookieJar
 ): Promise<{ text: string; ok: boolean; status: number }> {
   let res: Response;
   try {
     res = await fetch(url, {
       ...init,
-      headers: { ...HEADERS, ...(init.headers as Record<string, string>) },
+      headers: {
+        ...HEADERS,
+        ...(jar?.value ? { Cookie: jar.value } : {}),
+        ...(init.headers as Record<string, string>),
+      },
       cache: "no-store",
     });
   } catch {
     throw new TempMailError("Tidak bisa menghubungi tempm.com.", 503);
   }
+  if (jar) mergeCookies(jar, getSetCookieHeaders(res));
   const text = await res.text();
   return { text, ok: res.ok, status: res.status };
 }
@@ -204,6 +242,15 @@ export async function createEmail(
 
 // Mengambil seluruh isi inbox untuk satu alamat. Setiap pesan diberi nomor
 // urut (1-based) supaya bisa diakses lewat /api/[email]/inbox/[number].
+//
+// PENTING: tempm.com menampilkan pesan lewat AJAX setelah halaman selesai
+// dimuat di browser ("This page automatically loads all emails" —
+// tertulis di homepage-nya), bukan langsung ada di HTML awal. Supaya
+// server kita melihat isi yang sama, kita meniru urutan request browser:
+// 1) buka halaman utama dulu (dapat cookie sesi awal)
+// 2) set cookie "surl" = domain/username milik alamat yang dicek
+// 3) panggil check_mail.php (memicu backend "menyiapkan" mailbox tsb)
+// 4) baru ambil halaman inbox-nya
 export async function getInbox(emailAddress: string): Promise<{
   email: string;
   username: string;
@@ -212,10 +259,26 @@ export async function getInbox(emailAddress: string): Promise<{
   messages: TempMailMessage[];
 }> {
   const { user, domain, email, inboxUrl } = parseTarget(emailAddress);
+  const jar: CookieJar = { value: null };
 
-  const { text } = await safeFetch(inboxUrl, {
-    headers: { Cookie: `surl=${domain}/${user}/; path=/; domain=.tempm.com` },
-  });
+  await safeFetch(BASE_URL, {}, jar);
+  setJarCookie(jar, "surl", `${domain}/${user}/`);
+
+  await safeFetch(
+    `${BASE_URL}/check_mail.php`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ usr: user, dmn: domain }).toString(),
+    },
+    jar
+  );
+
+  const { text } = await safeFetch(
+    inboxUrl,
+    { headers: { Referer: `${BASE_URL}/${domain}/${user}` } },
+    jar
+  );
 
   if (!text || text.length < 200) {
     throw new TempMailError("Gagal mengambil inbox dari tempm.com.", 503);
@@ -224,28 +287,54 @@ export async function getInbox(emailAddress: string): Promise<{
   const $ = cheerio.load(text);
   const messages: TempMailMessage[] = [];
 
-  $(
-    ".mess_list, .mail, .message, div[id^='msg_'], .e7m.mess_list, div[class*='mess_list']"
-  ).each((idx, el) => {
-    const el$ = $(el);
-    const id = el$.attr("id") || `msg-${idx + 1}`;
+  // Selector utama: markup "e7m" (dipakai jaringan script yang sama dengan
+  // generator.email/emailfake.com). Kalau tidak ada hasil, coba selector
+  // generik dari tempm.js sebagai cadangan.
+  const primarySelectors =
+    ".e7m.list-group-item.list-group-item-info, .e7m.row.list-group-item";
+  const fallbackSelectors =
+    ".mess_list, .mail, .message, div[id^='msg_'], div[class*='mess_list']";
+
+  function extractFrom(el$: cheerio.Cheerio<any>) {
     const from =
       el$
-        .find(".from, .from_mail, .sender, .to_e7m, .col-md-3, a[href*='from']")
+        .find(
+          ".from_div_45g45gg, .from, .from_mail, .sender, .to_e7m, span:contains('From:') + span, a[href*='from']"
+        )
         .first()
         .text()
         .trim() || "";
     const subject =
-      el$.find(".subject, .subj, h4, h5, a.subject, .col-md-6, .title").first().text().trim() ||
-      "";
+      el$
+        .find(".subj_div_45g45gg, .subject, .subj, h4, h5, a.subject, .title")
+        .first()
+        .text()
+        .trim() || "";
     const time =
-      el$.find(".time, .date, .received, .col-md-3, span.time").first().text().trim() || "";
-
+      el$
+        .find(
+          ".time_div_45g45gg, .time, .date, .received, span:contains('Received:') + span"
+        )
+        .first()
+        .text()
+        .trim() || "";
     const bodyEl = el$
-      .find(".mail_content, .mess_body, .message_body, .content, #email_body, div.body")
+      .find(
+        ".mess_bodiyy, .mail_content, .mess_body, .message_body, .content, #email_body, div.body"
+      )
       .first();
     const html = bodyEl.html() || "";
     const textContent = bodyEl.text().trim() || "";
+    return { from, subject, time, html, textContent };
+  }
+
+  let nodes = $(primarySelectors);
+  if (nodes.length === 0) nodes = $(fallbackSelectors);
+
+  nodes.each((idx, el) => {
+    const el$ = $(el);
+    const id = el$.attr("id") || `msg-${idx + 1}`;
+    const { from, subject, time, html, textContent } = extractFrom(el$);
 
     if (from || subject || textContent) {
       messages.push({
