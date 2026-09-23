@@ -1,37 +1,24 @@
-// Backend email sementara — scraping generator.email (tanpa API key).
-// Diport dari tempmail.js (Node https module) ke fetch API agar jalan di
-// Next.js Route Handlers / Vercel Serverless Functions tanpa perubahan.
+// Backend email sementara — scraping tempm.com (tanpa API key).
+// Diport dari tempm.js (axios + cheerio, CLI Node) ke fetch API + cheerio
+// agar jalan di Next.js Route Handlers / Vercel Serverless Functions.
 //
 // Setiap request dibuat stateless: cookie "surl" untuk membuka inbox bisa
-// diturunkan langsung dari domain+username (tidak perlu login ulang atau
-// menyimpan sesi di server), jadi cocok untuk lingkungan serverless yang
-// instance-nya bisa berbeda-beda tiap request.
+// diturunkan langsung dari domain+username, jadi tidak perlu login ulang
+// atau menyimpan sesi di server — cocok untuk lingkungan serverless yang
+// instance-nya bisa berbeda tiap request.
 
-const BASE_URL = "https://generator.email";
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36";
+import * as cheerio from "cheerio";
 
-// Hash tetap yang dipakai generator.email di cookie "surl" — sama untuk semua
-// alamat, hanya domain & username yang berubah.
-const SURL_SUFFIX = "f73f0754a89555693e22f70a619b772c";
+const BASE_URL = "https://tempm.com";
+const FALLBACK_DOMAIN = "znext.bond";
 
-export const DOMAINS = [
-  "samvix.life",
-  "wildan.tech",
-  "sentra-premium.com",
-  "remahankerupuk.com",
-  "angiiidayyy.click",
-  "sekotong.store",
-  "fbins001mail.com",
-  "phamlam.online",
-  "evoiceeeeee.blog",
-  "starcheck.in",
-  "banri.xyz",
-  "acqq.dev",
-  "tools-capcut.com",
-  "saovangtiles.site",
-  "hohohim.com",
-];
+const HEADERS: Record<string, string> = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  Referer: `${BASE_URL}/`,
+  Origin: BASE_URL,
+  "Accept-Language": "en-US,en;q=0.9,id;q=0.8",
+};
 
 export class TempMailError extends Error {
   status?: number;
@@ -44,250 +31,239 @@ export class TempMailError extends Error {
 
 export type TempMailMessage = {
   number: number;
+  id: string;
   from: string;
   subject: string;
   to: string;
   time: string;
+  preview: string;
   body: string;
 };
 
-type CookieJar = { value: string | null };
-
-function mergeCookies(jar: CookieJar, setCookieList: string[]) {
-  if (!setCookieList.length) return;
-  const newCookies = setCookieList.map((c) => c.split(";")[0]);
-  const existing = jar.value ? jar.value.split("; ").filter(Boolean) : [];
-  for (const nc of newCookies) {
-    const key = nc.split("=")[0];
-    const idx = existing.findIndex((e) => e.startsWith(key + "="));
-    if (idx >= 0) existing[idx] = nc;
-    else existing.push(nc);
-  }
-  jar.value = existing.join("; ");
-}
-
-function setCookie(jar: CookieJar, name: string, value: string) {
-  const existing = jar.value ? jar.value.split("; ").filter(Boolean) : [];
-  const idx = existing.findIndex((e) => e.startsWith(name + "="));
-  if (idx >= 0) existing[idx] = `${name}=${value}`;
-  else existing.push(`${name}=${value}`);
-  jar.value = existing.join("; ");
-}
-
-function getSetCookieHeaders(res: Response): string[] {
-  const anyHeaders = res.headers as unknown as { getSetCookie?: () => string[] };
-  if (typeof anyHeaders.getSetCookie === "function") {
-    return anyHeaders.getSetCookie() || [];
-  }
-  const single = res.headers.get("set-cookie");
-  return single ? [single] : [];
-}
-
-async function request(
-  jar: CookieJar,
-  method: string,
-  path: string,
-  data?: Record<string, string> | null,
-  extraHeaders: Record<string, string> = {},
-  redirectCount = 0
-): Promise<string> {
-  if (redirectCount > 5) return "";
-
-  const headers: Record<string, string> = {
-    "User-Agent": USER_AGENT,
-    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    "X-Requested-With": "XMLHttpRequest",
-    ...(jar.value ? { Cookie: jar.value } : {}),
-    ...extraHeaders,
-  };
-
-  let body: string | undefined;
-  if (data) {
-    body = new URLSearchParams(data).toString();
-    headers["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8";
-  }
-
+async function safeFetch(
+  url: string,
+  init: RequestInit = {}
+): Promise<{ text: string; ok: boolean; status: number }> {
   let res: Response;
   try {
-    res = await fetch(`${BASE_URL}${path}`, {
-      method,
-      headers,
-      body,
-      redirect: "manual",
+    res = await fetch(url, {
+      ...init,
+      headers: { ...HEADERS, ...(init.headers as Record<string, string>) },
       cache: "no-store",
     });
   } catch {
-    throw new TempMailError("Tidak bisa menghubungi generator.email.");
+    throw new TempMailError("Tidak bisa menghubungi tempm.com.", 503);
   }
-
-  mergeCookies(jar, getSetCookieHeaders(res));
-
-  if ((res.status === 301 || res.status === 302) && res.headers.get("location")) {
-    const location = res.headers.get("location")!;
-    const newPath = location.startsWith("http") ? new URL(location).pathname : location;
-    return request(jar, "GET", newPath, null, extraHeaders, redirectCount + 1);
-  }
-
-  return res.text();
-}
-
-function generateUsername(): string {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let result = "";
-  for (let i = 0; i < 8; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
-
-export function getRandomDomain(): string {
-  return DOMAINS[Math.floor(Math.random() * DOMAINS.length)];
-}
-
-export function isKnownDomain(domain: string): boolean {
-  return DOMAINS.includes(domain.toLowerCase());
+  const text = await res.text();
+  return { text, ok: res.ok, status: res.status };
 }
 
 export function isValidUsername(username: string): boolean {
   return /^[a-zA-Z0-9][a-zA-Z0-9._-]{1,28}[a-zA-Z0-9]$/.test(username);
 }
 
-export function parseEmailAddress(address: string): { username: string; domain: string } {
-  const parts = address.split("@");
-  if (parts.length !== 2 || !parts[0] || !parts[1]) {
-    throw new TempMailError("Format email tidak valid.", 400);
-  }
-  return { username: parts[0], domain: parts[1].toLowerCase() };
+function sanitizeUsername(user: string): string {
+  return (user || "").replace(/[^a-zA-Z0-9._-]/g, "").toLowerCase();
 }
 
-// Membuat/memvalidasi sebuah alamat di generator.email. Situs ini tidak
-// punya konsep "akun" nyata — cukup memvalidasi bahwa domain+username bisa
-// dipakai, lalu alamat itu langsung aktif menerima email.
+function parseTarget(input: string): {
+  user: string;
+  domain: string;
+  email: string;
+  inboxUrl: string;
+} {
+  let str = String(input || "")
+    .trim()
+    .replace(/^https?:\/\/tempm\.com\//i, "")
+    .replace(/^mailto:/i, "")
+    .split("?")[0]
+    .replace(/^\/+|\/+$/g, "");
+
+  let user = "";
+  let domain = "";
+
+  if (str.includes("@")) {
+    const p = str.split("@");
+    user = p[0];
+    domain = p[1];
+  } else if (str.includes("/")) {
+    const p = str.split("/");
+    if (p[0].includes(".")) {
+      domain = p[0];
+      user = p[1];
+    } else {
+      user = p[0];
+      domain = p[1];
+    }
+  } else {
+    user = str;
+  }
+
+  user = sanitizeUsername(user);
+  domain = (domain || "").toLowerCase();
+
+  if (!user || !domain) {
+    throw new TempMailError("Format email tidak valid.", 400);
+  }
+
+  return {
+    user,
+    domain,
+    email: `${user}@${domain}`,
+    inboxUrl: `${BASE_URL}/${domain}/${user}`,
+  };
+}
+
+// GET daftar domain aktif dari tempm.com (di-scrape live, jadi selalu
+// mengikuti domain terbaru yang disediakan situsnya).
+export async function getDomains(keyword = "a"): Promise<string[]> {
+  const q = keyword || "a";
+  const { text } = await safeFetch(
+    `${BASE_URL}/search.php?key=${encodeURIComponent(q)}`,
+    { headers: { Accept: "application/json, text/plain, */*" } }
+  );
+
+  let data: string[] = [];
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) data = parsed;
+  } catch {
+    const $ = cheerio.load(text);
+    $(".tt-suggestion p, [id*='.']").each((_, el) => {
+      const id = $(el).attr("id");
+      if (id && id.includes(".") && !data.includes(id)) data.push(id);
+    });
+  }
+
+  return data;
+}
+
+export async function getRandomDomain(): Promise<string> {
+  try {
+    const domains = await getDomains("a");
+    if (domains.length > 0) {
+      return domains[Math.floor(Math.random() * domains.length)];
+    }
+  } catch {
+    // fall through to fallback domain
+  }
+  return FALLBACK_DOMAIN;
+}
+
+async function validateEmail(
+  user: string,
+  domain: string
+): Promise<{ email: string; username: string; domain: string }> {
+  const u = sanitizeUsername(user);
+  const d = domain.toLowerCase().trim();
+
+  if (!u || !d) {
+    throw new TempMailError("User dan domain wajib diisi.", 400);
+  }
+
+  const params = new URLSearchParams({ usr: u, dmn: d });
+  await safeFetch(`${BASE_URL}/check_adres_validation3.php`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+
+  return { email: `${u}@${d}`, username: u, domain: d };
+}
+
+// Membuat/memvalidasi sebuah alamat di tempm.com. Kalau username tidak
+// diberikan, alamat acak diambil langsung dari halaman utama tempm.com
+// (persis seperti yang muncul saat membuka situsnya lewat browser).
 export async function createEmail(
   username?: string,
   domain?: string
 ): Promise<{ email: string; username: string; domain: string }> {
-  const usr = username || generateUsername();
-  const dmn = (domain || getRandomDomain()).toLowerCase();
-
-  if (username && !isValidUsername(username)) {
-    throw new TempMailError(
-      "Nama harus 3-30 karakter, huruf/angka/titik/underscore/strip, diawali & diakhiri huruf atau angka.",
-      400
-    );
-  }
-  if (!isKnownDomain(dmn)) {
-    throw new TempMailError("Domain tidak dikenal.", 400);
-  }
-
-  const jar: CookieJar = { value: null };
-  const punycode = await request(jar, "POST", "/dom_to_punycode.php", { dmn });
-  const punyDomain = punycode || dmn;
-
-  await request(jar, "POST", "/check_mail.php", { usr, dmn: punyDomain });
-  await request(jar, "POST", "/check_adres_validation3.php", { usr, dmn: punyDomain });
-
-  return { email: `${usr}@${dmn}`, username: usr, domain: dmn };
-}
-
-function parseEmails(html: string, email: string): Omit<TempMailMessage, "number">[] {
-  const emails: Omit<TempMailMessage, "number">[] = [];
-
-  const headerPattern =
-    /<div class="e7m list-group-item list-group-item-info">([\s\S]*?)(?=<script|<div class="e7m row list-group-item")/g;
-  let headerMatch: RegExpExecArray | null;
-
-  while ((headerMatch = headerPattern.exec(html)) !== null) {
-    const chunk = headerMatch[1];
-
-    const fromMatch = chunk.match(/<div class="e7m from_div_45g45gg">([^<]+)<\/div>/);
-    const subjectMatch = chunk.match(/<div class="e7m subj_div_45g45gg">([^<]*)<\/div>/);
-    const timeMatch = chunk.match(/<div class="e7m time_div_45g45gg">([^<]+)<\/div>/);
-
-    const from = fromMatch ? fromMatch[1].trim() : "";
-    const subject = subjectMatch ? subjectMatch[1].trim() : "";
-    const time = timeMatch ? timeMatch[1].trim() : "";
-
-    if (from && from !== "From") {
-      emails.push({ from, subject: subject || "(no subject)", to: email, time, body: "" });
+  if (username) {
+    if (!isValidUsername(username)) {
+      throw new TempMailError(
+        "Nama harus 3-30 karakter, huruf/angka/titik/underscore/strip, diawali & diakhiri huruf atau angka.",
+        400
+      );
     }
+    const dmn = domain || (await getRandomDomain());
+    return validateEmail(username, dmn);
   }
 
-  const rowSplit = html.split(/<div class="e7m row list-group-item"/);
-  const detailRows: { from: string; to: string; time: string; body: string }[] = [];
+  const { text } = await safeFetch(BASE_URL);
+  const $ = cheerio.load(text);
+  const emailText = $("#email_ch_text").text().trim();
+  const user = ($("#userName").val() as string) || (emailText ? emailText.split("@")[0] : "");
+  const dom = ($("#domainName2").val() as string) || (emailText ? emailText.split("@")[1] : "");
 
-  for (let i = 1; i < rowSplit.length; i++) {
-    const chunk = rowSplit[i];
-
-    const fromMatch = chunk.match(/<span>From: <\/span><span>([^<]+)/);
-    const toMatch = chunk.match(/<span>To: <\/span><span>([^<]+)<\/span>/);
-    const timeMatch = chunk.match(/<span>Received: <\/span><span>([^<]+)<span/);
-    const bodyMatch = chunk.match(
-      /<div class="e7m mess_bodiyy"><div dir="auto">([\s\S]*?)<\/div><\/div>/
-    );
-
-    detailRows.push({
-      from: fromMatch ? fromMatch[1].trim() : "",
-      to: toMatch ? toMatch[1].trim() : email,
-      time: timeMatch ? timeMatch[1].trim() : "",
-      body: bodyMatch ? bodyMatch[1].trim() : "",
-    });
+  if (!user || !dom) {
+    throw new TempMailError("Gagal membuat email acak dari tempm.com.", 503);
   }
 
-  for (let i = 0; i < emails.length; i++) {
-    if (detailRows[i]) {
-      emails[i].to = detailRows[i].to || email;
-      emails[i].body = detailRows[i].body || "";
-      if (detailRows[i].time) emails[i].time = detailRows[i].time;
-    }
-  }
-
-  if (emails.length === 0 && detailRows.length > 0) {
-    for (const row of detailRows) {
-      if (row.from) {
-        emails.push({
-          from: row.from,
-          subject: "(no subject)",
-          to: row.to || email,
-          time: row.time || "",
-          body: row.body || "",
-        });
-      }
-    }
-  }
-
-  return emails;
+  return { email: `${user}@${dom}`, username: user, domain: dom };
 }
 
 // Mengambil seluruh isi inbox untuk satu alamat. Setiap pesan diberi nomor
 // urut (1-based) supaya bisa diakses lewat /api/[email]/inbox/[number].
-export async function getInbox(
-  emailAddress: string
-): Promise<{ email: string; username: string; domain: string; total: number; messages: TempMailMessage[] }> {
-  const { username, domain } = parseEmailAddress(emailAddress);
-  const email = `${username}@${domain}`;
+export async function getInbox(emailAddress: string): Promise<{
+  email: string;
+  username: string;
+  domain: string;
+  total: number;
+  messages: TempMailMessage[];
+}> {
+  const { user, domain, email, inboxUrl } = parseTarget(emailAddress);
 
-  const jar: CookieJar = { value: null };
-
-  await request(jar, "GET", "/");
-  setCookie(jar, "surl", `${domain}/${username}/${SURL_SUFFIX}`);
-
-  await request(jar, "POST", "/check_mail.php", { usr: username, dmn: domain });
-
-  const html = await request(jar, "GET", `/${domain}/${username}`, null, {
-    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    Referer: `${BASE_URL}/${domain}/${username}`,
+  const { text } = await safeFetch(inboxUrl, {
+    headers: { Cookie: `surl=${domain}/${user}/; path=/; domain=.tempm.com` },
   });
 
-  if (typeof html !== "string" || html.length < 500) {
-    throw new TempMailError("Gagal mengambil inbox dari generator.email.", 503);
+  if (!text || text.length < 200) {
+    throw new TempMailError("Gagal mengambil inbox dari tempm.com.", 503);
   }
 
-  const parsed = parseEmails(html, email);
-  const messages: TempMailMessage[] = parsed.map((m, i) => ({ number: i + 1, ...m }));
+  const $ = cheerio.load(text);
+  const messages: TempMailMessage[] = [];
 
-  return { email, username, domain, total: messages.length, messages };
+  $(
+    ".mess_list, .mail, .message, div[id^='msg_'], .e7m.mess_list, div[class*='mess_list']"
+  ).each((idx, el) => {
+    const el$ = $(el);
+    const id = el$.attr("id") || `msg-${idx + 1}`;
+    const from =
+      el$
+        .find(".from, .from_mail, .sender, .to_e7m, .col-md-3, a[href*='from']")
+        .first()
+        .text()
+        .trim() || "";
+    const subject =
+      el$.find(".subject, .subj, h4, h5, a.subject, .col-md-6, .title").first().text().trim() ||
+      "";
+    const time =
+      el$.find(".time, .date, .received, .col-md-3, span.time").first().text().trim() || "";
+
+    const bodyEl = el$
+      .find(".mail_content, .mess_body, .message_body, .content, #email_body, div.body")
+      .first();
+    const html = bodyEl.html() || "";
+    const textContent = bodyEl.text().trim() || "";
+
+    if (from || subject || textContent) {
+      messages.push({
+        number: 0,
+        id,
+        from,
+        subject: subject || "(no subject)",
+        to: email,
+        time,
+        preview: textContent ? textContent.slice(0, 150) : "",
+        body: html || textContent,
+      });
+    }
+  });
+
+  messages.forEach((m, i) => (m.number = i + 1));
+
+  return { email, username: user, domain, total: messages.length, messages };
 }
 
 export async function getInboxMessage(
